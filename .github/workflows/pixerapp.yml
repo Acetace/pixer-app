@@ -1,0 +1,52 @@
+name: Apache CI/CD Pipeline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-test-deploy:
+    runs-on: self-hosted  # This tells GitHub to use your EC2 runner
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Build Docker image
+      run: docker build -t ${{ secrets.DOCKERHUB_USERNAME }}/static-site:latest .
+
+    - name: Log in to Docker Hub
+      run: echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+
+    - name: Push image to Docker Hub
+      run: docker push ${{ secrets.DOCKERHUB_USERNAME }}/static-site:latest
+
+    - name: Stop old container
+      run: docker stop static-container || true
+
+    - name: Remove old container
+      run: docker rm static-container || true
+
+    - name: Run new container
+      run: docker run -d -p 8080:80 --name static-container ${{ secrets.DOCKERHUB_USERNAME }}/static-site:latest
+
+    - name: Send Email Notification
+      if: always()
+      uses: dawidd6/action-send-mail@v3
+      with:
+        server_address: smtp.gmail.com
+        server_port: 587
+        username: ${{ secrets.EMAIL_USERNAME }}
+        password: ${{ secrets.EMAIL_PASSWORD }}
+        subject: GitHub Action ${{ job.status }} for Apache CI/CD
+        to: yourteam@example.com
+        from: Apache CI/CD Bot <noreply@example.com>
+        body: |
+          The Apache CI/CD pipeline has completed with status: ${{ job.status }}.
+          Branch: ${{ github.ref }}
+          Commit: ${{ github.sha }}
